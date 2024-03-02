@@ -25,27 +25,29 @@ state_dim = env.observation_space.shape[0]
 n_action = env.action_space.n 
 nb_neurons= 50
 DQN = torch.nn.Sequential(nn.Linear(state_dim, nb_neurons),
-                            nn.ReLU(),
-                            nn.Linear(nb_neurons, nb_neurons),
-                            nn.ReLU(), 
+                            nn.SELU(),
+                            nn.Linear(nb_neurons, 2*nb_neurons),
+                            nn.SELU(), 
+                            nn.Linear(2*nb_neurons, nb_neurons), 
+                            # use diff activation function(empirically better than others)
+                            nn.SELU(),
                             nn.Linear(nb_neurons, n_action)).to(device)
 # DQN config
 config = {'nb_actions': env.action_space.n,
         'learning_rate': 0.001,
         'gamma': 0.95,
-        'buffer_size': 1000000,
+        'buffer_size': 200000,
         'epsilon_min': 0.01,
-        'epsilon_max': 0.01,
-        'epsilon_decay_period': 40000,
+        'epsilon_max': 1,
+        'epsilon_decay_period': 20000,
         'epsilon_delay_decay': 20,
         'batch_size': 2000,
-        'gradient_steps': 20,
+        'gradient_steps': 5,
         'update_target_strategy': 'ema', # or 'replace' or 'ema'
         'update_target_freq': 50,
         'update_target_tau': 0.0005,
         'criterion': torch.nn.SmoothL1Loss(),
-        'monitoring_nb_trials': 0,
-        'save_model_freq': 30}
+        'monitoring_nb_trials': 0}
 
 class ProjectAgent:
     def act(self, observation, use_random=False):
@@ -57,9 +59,10 @@ class ProjectAgent:
         
     def load(self):
         self.agent = dqn_agent(config, DQN)
-        path = os.getcwd() + "/src/Model_60"
+        path = os.getcwd() + "/src/models/model_ep_900_rd.pt"
         self.agent.model.load_state_dict(torch.load(path, 
                                                     map_location= torch.device('cpu')))
+        
         
 class ReplayBuffer:
     def __init__(self, capacity, device):
@@ -215,9 +218,9 @@ class dqn_agent:
                           ", batch size ", '{:4d}'.format(len(self.memory)), 
                           ", ep return ", '{:e}'.format(episode_cum_reward), 
                           sep='')  
-                    if episode % self.model_save_freq == 0 : 
-                        max_return = episode_return
-                        self.save(episode)   
+                    
+                    if episode % 100 == 0:
+                        torch.save(self.model.state_dict(), './src/models/model_ep_{}_v2.pt'.format(episode))
                 state, _ = env.reset()
                 episode_cum_reward = 0
             else:
@@ -268,37 +271,40 @@ if __name__ == "__main__":
     n_action = env.action_space.n 
     nb_neurons= 50
     DQN = torch.nn.Sequential(nn.Linear(state_dim, nb_neurons),
-                            nn.ReLU(),
-                            nn.Linear(nb_neurons, nb_neurons),
-                            nn.ReLU(), 
+                            nn.SELU(),
+                            nn.Linear(nb_neurons, 2*nb_neurons),
+                            nn.SELU(), 
+                            nn.Linear(2*nb_neurons, nb_neurons), 
+                            # use diff activation function(empirically better than others)
+                            nn.SELU(),
                             nn.Linear(nb_neurons, n_action)).to(device)
     # DQN config
     config = {'nb_actions': env.action_space.n,
             'learning_rate': 0.001,
             'gamma': 0.95,
-            'buffer_size': 1000000,
+            'buffer_size': 500000,
             'epsilon_min': 0.01,
-            'epsilon_max': 0.01,
-            'epsilon_decay_period': 40000,
+            'epsilon_max': 1,
+            'epsilon_decay_period': 20000,
             'epsilon_delay_decay': 20,
             'batch_size': 2000,
-            'gradient_steps': 20,
+            'gradient_steps': 5,
             'update_target_strategy': 'ema', # or 'replace' or 'ema'
             'update_target_freq': 50,
             'update_target_tau': 0.0005,
             'criterion': torch.nn.SmoothL1Loss(),
-            'monitoring_nb_trials': 0,
-            'save_model_freq': 30}
+            'monitoring_nb_trials': 0}
     # Declare agent
     agent = dqn_agent(config, DQN)
-    load = True
+    load = False
     if load:
-        agent.load('models/model_1.000000e+00',
-                   'targets/target_model_1.000000e+00',
-                   'optimizers/optimizer_model_1.000000e+00',
-                   'agents/agent_1.000000e+00.pkl')
+        # load agent using pickle
+        with open('./src/agents/agent.pkl', 'rb') as f:
+            agent = pickle.load(f)
    
     # Train agent
-    max_episode_steps=100
+    max_episode_steps=2000
     ep_length, disc_rewards, tot_rewards, V0 = agent.train(env, max_episode_steps)
+    with open('./src/agents/agent.pkl', 'wb') as f:
+        pickle.dump(agent, f)
      
